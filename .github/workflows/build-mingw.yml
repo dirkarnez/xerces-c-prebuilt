@@ -1,0 +1,70 @@
+name: cpp-cmake-mingw-prebuilt-release-actions-workflow
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'c*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+jobs:
+  build:
+    name: Create Release
+    runs-on: windows-2019
+    env:
+      libraryName: xerces-c
+      cmakeInstallationPath: xerces-c-installation
+      tagName: v3.2.3
+      mingwTargetZip: xerces-c-${{ github.ref_name }}-x86_64-posix-seh-rev0-8.1.0.zip
+    steps:
+      - name: git clone
+        shell: cmd
+        run: git clone --recursive https://github.com/apache/xerces-c.git && cd xerces-c && git checkout ${{ env.tagName }}
+      
+      - name: curl icu4c-v71.1-x86_64-posix-seh-rev0-8.1.0.zip
+        shell: cmd
+        run: cd /d ${{ github.workspace }} && curl https://github.com/dirkarnez/icu4c-prebuilt/releases/download/v71.1/icu4c-v71.1-x86_64-posix-seh-rev0-8.1.0.zip -L --output icu4c-v71.1-x86_64-posix-seh-rev0-8.1.0.zip && dir && 7z.exe x icu4c-v71.1-x86_64-posix-seh-rev0-8.1.0.zip -o"${{ github.workspace }}\icu4c-v71.1-x86_64-posix-seh-rev0-8.1.0"  && dir
+            
+      - name: Install MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          
+      - name: curl x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z
+        shell: cmd
+        run:  cd /d ${{ github.workspace }} && curl https://github.com/2641797006/c/blob/master/GCC-zip/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z?raw=true -L --output x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z && dir && 7z.exe x x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z
+        
+      - name: curl cmake-3.24.0-windows-x86_64.zip
+        shell: cmd
+        run: cd /d ${{ github.workspace }} && curl https://github.com/Kitware/CMake/releases/download/v3.24.0/cmake-3.24.0-windows-x86_64.zip -L --output cmake-3.24.0-windows-x86_64.zip && dir && 7z.exe x cmake-3.24.0-windows-x86_64.zip
+        
+      - name: set PATH, check mingw version, cmake generate, build and install
+        shell: msys2 {0}
+        run: |
+            workspace=$(pwd) && \
+            export PATH="$workspace/mingw64:$workspace/mingw64/bin:$workspace/cmake-3.24.0-windows-x86_64/bin:$workspace/msys64/usr/bin:/usr/bin" && \
+            gcc --version && \
+            cd xerces-c && \
+            cmake.exe -G "MinGW Makefiles"  \
+            -DCMAKE_POLICY_DEFAULT_CMP0074=NEW \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DICU_ROOT="$workspace/icu4c-v71.1-x86_64-posix-seh-rev0-8.1.0" \
+            -DCMAKE_INSTALL_PREFIX="cmake-build/${{ env.cmakeInstallationPath }}" \
+            -B./cmake-build && \
+            cd cmake-build && \
+            cmake --build . && \
+            cmake --install . 
+            
+      - name: Archive Release
+        uses: thedoctor0/zip-release@master
+        with:
+          type: 'zip'
+          directory: "xerces-c/cmake-build/${{ env.cmakeInstallationPath }}"
+          filename: "${{ env.mingwTargetZip }}"
+          
+      - name: Release prebuilt
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "xerces-c/cmake-build/${{ env.cmakeInstallationPath }}/${{ env.mingwTargetZip }}"
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
